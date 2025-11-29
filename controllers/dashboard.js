@@ -180,211 +180,266 @@ const getalldata = async function (req, res) {
 }
 
 const getById = async function (req, res) {
-    const id = req.body.id
-    let type = req.body.type
-    const isviewed = await viewmodel.findOne({userId: req.decoded.id, contentId: req.body.id})
-    
-    if (type == "article") {
+  try {
+    const id = req.body.id;
+    const type = req.body.type;
 
-        if(isviewed == null)  {
-            
-            let updatearticle= await articlemodel.findByIdAndUpdate({_id:id}, { $inc: { views: 1 }}, {new:true} );
+    // Logged-in user data
+    const usrdata = await usermodel.findById(req.decoded.id);
+    if (!usrdata)
+      return res.status(400).send({ status: false, message: "please Login" });
 
-            let viewdata= await viewmodel.create({
-                contentId:id,
-                userId:req.decoded.id
-            })
+    // Check if user viewed
+    const isviewed = await viewmodel.findOne({
+      userId: req.decoded.id,
+      contentId: req.body.id
+    });
 
-        }
-        let article = await articlemodel.findOne({ _id: new mongoose.Types.ObjectId(id) }).lean()
+    // Allow Copy Logic
+    const canUserCopy = (articleAllowCopy, user) => {
+      const now = new Date();
+      switch (articleAllowCopy) {
+        case "both":
+          return true;
+        case "subscribed":
+          return (
+            user.subscribedUser === true &&
+            user.planExpiryDate &&
+            new Date(user.planExpiryDate) > now
+          );
+        case "unsubscribed":
+          return user.subscribedUser === false;
+        case "none":
+        default:
+          return false;
+      }
+    };
 
-        console.log(article,"articledata++++++");
-        let allcontent="";
+    // ----------------------------------------------------------------------
+    // 📌 TYPE = ARTICLE
+    // ----------------------------------------------------------------------
+    if (type === "article") {
+      if (isviewed == null) {
+        await articlemodel.findByIdAndUpdate(
+          { _id: id },
+          { $inc: { views: 1 } },
+          { new: true }
+        );
 
-        const relatedarticles = await articlemodel.find({ categoryId:article.categoryId });
+        await viewmodel.create({
+          contentId: id,
+          userId: req.decoded.id
+        });
+      }
 
-        let relatedarray = []
-        for (let i = 0; i < relatedarticles.length; i++) {
-            const obj = {
-                id: relatedarticles[i]._id.toString(),
-                Image: relatedarticles[i].image[0],
-                title: relatedarticles[i].title,
-                description: relatedarticles[i].shortdescription,
-                bookmark: relatedarticles[i].bookmark,
-                time: relatedarticles[i].timetoread,
-                premium: relatedarticles[i].isPremium,
-                reporter: (relatedarticles[i].reporter) ? relatedarticles[i].reporter : "",
-                createdAt: formatDateTime(relatedarticles[i].createdAt)
+      let article = await articlemodel
+        .findOne({ _id: new mongoose.Types.ObjectId(id) })
+        .lean();
 
-            }
-            relatedarray.push(obj);
-        }
-        let reportData= await reportermodel.findOne({_id:article.reporterId});
-        article.createdEmail= reportData.email;
-        article.reporter= (article.reporter)? (article.reporter) : ""
-        article.createdAt = formatDateTime(article.createdAt);
+      const relatedarticles = await articlemodel.find({
+        categoryId: article.categoryId
+      });
 
-        const input = article.allcontent;
-        const output = striptags(input);
-        article.readcontent=output;
+      let relatedarray = [];
+      for (let i = 0; i < relatedarticles.length; i++) {
+        relatedarray.push({
+          id: relatedarticles[i]._id.toString(),
+          Image: relatedarticles[i].image[0],
+          title: relatedarticles[i].title,
+          description: relatedarticles[i].shortdescription,
+          bookmark: relatedarticles[i].bookmark,
+          time: relatedarticles[i].timetoread,
+          premium: relatedarticles[i].isPremium,
+          reporter: relatedarticles[i].reporter || "",
+          createdAt: formatDateTime(relatedarticles[i].createdAt)
+        });
+      }
 
-        console.log(article,"articles==============================");
-        console.log(relatedarray,"relatedarray==============================");
+      const reportData = await reportermodel.findOne({
+        _id: article.reporterId
+      });
 
-        if (article) return res.status(200).send({ data: article, related: relatedarray })
-        return res.status(404).send({ status: false, message: 'article not found' })
+      article.createdEmail = reportData.email;
+      article.reporter = article.reporter || "";
+      article.createdAt = formatDateTime(article.createdAt);
 
-    } else if (type == "news") {
-        if(isviewed == null)  {
-            console.log("user has not viewed")
-            let updatearticle= await newsmoddel.findByIdAndUpdate({_id:id}, { $inc: { views: 1 }}, {new: true} )
-            console.log(updatearticle, "updatednewss")
-            let viewdata= await viewmodel.create({
-                contentId:id,
-                userId:req.decoded.id
-            })
+      const output = striptags(article.allcontent);
+      article.readcontent = output;
 
-        }
+      // ⭐ ADD allowCopy
+      article.allowCopy = canUserCopy(article.allowCopy, usrdata);
 
-       /* 
-        let news = await newsmoddel.findById({ _id: id }).lean()
-        const relatednews = await newsmoddel.find({category:news.category})
-        let allcontent=""
-        let relatedarray = []
-        for (let i = 0; i < relatednews.length; i++) {
-            const obj = {
-                id: relatednews[i]._id.toString(),
-                Image: (relatednews[i].image) ? relatednews[i].image : "uploads\noimage.jpg",
-                title: relatednews[i].title,
-                description: (relatednews[i].data[0].allcontent) ? relatednews[i].data[0].allcontent : "",
-                bookmark: relatednews[i].bookmark,
-                time: relatednews[i].timetoread,
-                premium: relatednews[i].isPremium,
-                reporter: (relatednews[i].reporter) ? relatednews[i].reporter : "",
-                createdAt: formatDateTime(relatednews[i].createdAt)
-            }
-            relatedarray.push(obj)
-        }
-        for(let i=0;i<news.data.length;i++){
-            allcontent+= (news.data[i].content) ? (news.data[i].content) : " "
-        }
-        //news.allcontent=allcontent
-        news.reporter= (news.reporter)? (news.reporter) : ""
-        news.createdAt = formatDateTime(news.createdAt)*/
-
-
-        let article = await newsmoddel.findOne({ _id: new mongoose.Types.ObjectId(id) }).lean()
-        console.log(article.categoryId,"article++++++");
-        let allcontent="";
-
-        const relatedarticles = await newsmoddel.find({ categoryId:article.categoryId });
-
-        let relatedarray = []
-        for (let i = 0; i < relatedarticles.length; i++) {
-            const obj = {
-                id: relatedarticles[i]._id.toString(),
-                Image: relatedarticles[i].image[0],
-                title: relatedarticles[i].title,
-                description: striptags(relatedarticles[i].allcontent),
-                shortdescription: striptags(relatedarticles[i].allcontent),
-                bookmark: relatedarticles[i].bookmark,
-                time: relatedarticles[i].timetoread,
-                premium: relatedarticles[i].isPremium,
-                reporter: (relatedarticles[i].reporter) ? relatedarticles[i].reporter : "",
-                createdAt: formatDateTime(relatedarticles[i].createdAt)
-
-            }
-            relatedarray.push(obj);
-        }
-        let reportData= await reportermodel.findOne({_id:article.reporterId});
-        article.createdEmail= reportData.email;
-        article.reporter= (article.reporter)? (article.reporter) : ""
-        article.createdAt = formatDateTime(article.createdAt);
-
-        const input = article.allcontent;
-        const output = striptags(input);
-        article.readcontent=output;
-
-        if (article) return res.status(200).send({ data:article, related: relatedarray })
-        return res.status(404).send({ status: false, message: 'news not found' })
-
-    } else if (type == "video") {
-
-        if(isviewed == null)  {
-            console.log("user has not viewed")
-            let updatearticle= await videomodel.findByIdAndUpdate({_id:id}, { $inc: { views: 1 }}, {new:true} )
-            console.log(updatearticle, "updated video")
-            let viewdata= await viewmodel.create({
-                contentId:id,
-                userId:req.decoded.id
-            })
-
-
-        }
-        let video = await videomodel.findById({ _id: id }).lean()
-
-        let relatedVideos = await videomodel.find({})
-        let relatedarray = []
-        for (let i = 0; i < relatedVideos.length; i++) {
-            let obj = {
-                id: relatedVideos[i]._id.toString(),
-                video: relatedVideos[i].video,
-                title: relatedVideos[i].title,
-                description: relatedVideos[i].description,
-                bookmark: relatedVideos[i].bookmark,
-                time: relatedVideos[i].timetoread,
-                likes: relatedVideos[i].likes,
-                comments: relatedVideos[i].comments,
-                reporter: (relatedVideos[i].reporter) ? relatedVideos[i].reporter : " ",
-                createdAt: formatDateTime(relatedVideos[i].createdAt)
-
-            }
-            relatedarray.push(obj)
-
-        }
-        video.reporter= (video.reporter)? (video.reporter) : ""
-        video.createdAt = formattedDate(video.createdAt)
-
-        if (video) return res.status(200).send({ status: true, data:video, related: relatedarray })
-        return res.status(404).send({ status: false, message: 'video not found' })
-
-
-    } else if (type == "poster") {
-        if(isviewed == null)  {
-            console.log("user has not viewed")
-            let updatearticle= await postermodel.findByIdAndUpdate({_id:id}, { $inc: { views: 1 }}, {new: true} )
-            console.log(updatearticle, "updated poster")
-            let viewdata= await viewmodel.create({
-                contentId:id,
-                userId:req.decoded.id
-            })
-
-        }
-        let poster = await postermodel.findById({ _id: id }).lean()
-        let relatedposter = await postermodel.find()
-        let relatedarray = []
-        for (let i = 0; i < relatedposter.length; i++) {
-            let obj = {
-                id: relatedposter[i]._id.toString(),
-                video: relatedposter[i].image,
-                title: relatedposter[i].title,
-                bookmark: relatedposter[i].bookmark,
-                time: relatedposter[i].timetoread,
-                likes: relatedposter[i].likes,
-                reporter: (relatedposter[i].reporter) ? relatedposter[i].reporter : " ",
-                comments: relatedposter[i].comments,
-                createdAt: formatDateTime(relatedposter[i].createdAt)
-            }
-            relatedarray.push(obj)
-
-        }
-        poster.reporter= (poster.reporter)? (poster.reporter) : ""
-        poster.createdAt = formatDateTime(poster.createdAt)
-        if (poster) return res.status(200).json({ status: true, data:poster, related: relatedarray })
-        return res.status(404).send({ status: false, message: 'Poster not found' })
+      return res.status(200).send({
+        data: article,
+        related: relatedarray
+      });
     }
 
-}
+    // ----------------------------------------------------------------------
+    // 📌 TYPE = NEWS
+    // ----------------------------------------------------------------------
+    else if (type === "news") {
+      if (isviewed == null) {
+        await newsmoddel.findByIdAndUpdate(
+          { _id: id },
+          { $inc: { views: 1 } },
+          { new: true }
+        );
+
+        await viewmodel.create({
+          contentId: id,
+          userId: req.decoded.id
+        });
+      }
+
+      let article = await newsmoddel
+        .findOne({ _id: new mongoose.Types.ObjectId(id) })
+        .lean();
+
+      const relatedarticles = await newsmoddel.find({
+        categoryId: article.categoryId
+      });
+
+      let relatedarray = [];
+      for (let i = 0; i < relatedarticles.length; i++) {
+        relatedarray.push({
+          id: relatedarticles[i]._id.toString(),
+          Image: relatedarticles[i].image[0],
+          title: relatedarticles[i].title,
+          description: striptags(relatedarticles[i].allcontent),
+          shortdescription: striptags(relatedarticles[i].allcontent),
+          bookmark: relatedarticles[i].bookmark,
+          time: relatedarticles[i].timetoread,
+          premium: relatedarticles[i].isPremium,
+          reporter: relatedarticles[i].reporter || "",
+          createdAt: formatDateTime(relatedarticles[i].createdAt)
+        });
+      }
+
+      const reportData = await reportermodel.findOne({
+        _id: article.reporterId
+      });
+
+      article.createdEmail = reportData.email;
+      article.reporter = article.reporter || "";
+      article.createdAt = formatDateTime(article.createdAt);
+
+      const output = striptags(article.allcontent);
+      article.readcontent = output;
+
+      // ⭐ ADD allowCopy
+      article.allowCopy = canUserCopy(article.allowCopy, usrdata);
+
+      return res.status(200).send({
+        data: article,
+        related: relatedarray
+      });
+    }
+
+    // ----------------------------------------------------------------------
+    // 📌 TYPE = VIDEO
+    // ----------------------------------------------------------------------
+    else if (type === "video") {
+      if (isviewed == null) {
+        await videomodel.findByIdAndUpdate(
+          { _id: id },
+          { $inc: { views: 1 } },
+          { new: true }
+        );
+
+        await viewmodel.create({
+          contentId: id,
+          userId: req.decoded.id
+        });
+      }
+
+      let video = await videomodel.findById(id).lean();
+
+      let relatedVideos = await videomodel.find({});
+      let relatedarray = [];
+      for (let i = 0; i < relatedVideos.length; i++) {
+        relatedarray.push({
+          id: relatedVideos[i]._id.toString(),
+          video: relatedVideos[i].video,
+          title: relatedVideos[i].title,
+          description: relatedVideos[i].description,
+          bookmark: relatedVideos[i].bookmark,
+          time: relatedVideos[i].timetoread,
+          likes: relatedVideos[i].likes,
+          comments: relatedVideos[i].comments,
+          reporter: relatedVideos[i].reporter || " ",
+          createdAt: formatDateTime(relatedVideos[i].createdAt)
+        });
+      }
+
+      video.reporter = video.reporter || "";
+      video.createdAt = formatDateTime(video.createdAt);
+
+      // ⭐ ADD allowCopy
+      video.allowCopy = canUserCopy(video.allowCopy, usrdata);
+
+      return res.status(200).send({
+        status: true,
+        data: video,
+        related: relatedarray
+      });
+    }
+
+    // ----------------------------------------------------------------------
+    // 📌 TYPE = POSTER
+    // ----------------------------------------------------------------------
+    else if (type === "poster") {
+      if (isviewed == null) {
+        await postermodel.findByIdAndUpdate(
+          { _id: id },
+          { $inc: { views: 1 } },
+          { new: true }
+        );
+
+        await viewmodel.create({
+          contentId: id,
+          userId: req.decoded.id
+        });
+      }
+
+      let poster = await postermodel.findById(id).lean();
+      let relatedposter = await postermodel.find();
+
+      let relatedarray = [];
+      for (let i = 0; i < relatedposter.length; i++) {
+        relatedarray.push({
+          id: relatedposter[i]._id.toString(),
+          video: relatedposter[i].image,
+          title: relatedposter[i].title,
+          bookmark: relatedposter[i].bookmark,
+          time: relatedposter[i].timetoread,
+          likes: relatedposter[i].likes,
+          comments: relatedposter[i].comments,
+          reporter: relatedposter[i].reporter || " ",
+          createdAt: formatDateTime(relatedposter[i].createdAt)
+        });
+      }
+
+      poster.reporter = poster.reporter || "";
+      poster.createdAt = formatDateTime(poster.createdAt);
+
+      // ⭐ ADD allowCopy
+      poster.allowCopy = canUserCopy(poster.allowCopy, usrdata);
+
+      return res.status(200).json({
+        status: true,
+        data: poster,
+        related: relatedarray
+      });
+    }
+
+    return res.status(400).send({ status: false, message: "invalid type" });
+
+  } catch (err) {
+    console.error(err);
+    return res.status(500).send({ status: false, message: err.message });
+  }
+};
 
 
 const getlatest = async function (req, res) {

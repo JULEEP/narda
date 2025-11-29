@@ -436,7 +436,7 @@ const getlatestnews = async function (req, res) {
     const userId = req.decoded.id;
 
     // ✅ Fetch user details
-    const usrdata = await usermodel.findById({ _id: req.decoded.id });
+    const usrdata = await usermodel.findById({ _id: userId });
     if (!usrdata)
       return res.status(400).send({ status: false, message: "please Login" });
 
@@ -495,7 +495,6 @@ const getlatestnews = async function (req, res) {
         createdAt: newsItem.createdAt,
         type: "news",
         url: "",
-        // ✅ Added same allowCopy logic
         allowCopy: canUserCopy(newsItem.allowCopy, usrdata),
       };
 
@@ -545,12 +544,13 @@ const getlatestnews = async function (req, res) {
       createdAt: item.createdAt,
       type: "news",
       url: "",
-      allowCopy: canUserCopy(item.allowCopy, usrdata), // ✅ same logic
+      allowCopy: canUserCopy(item.allowCopy, usrdata),
     }));
 
-    // ✅ Banners unchanged
+    // ✅ Banners sorted by newest first (top)
     const banners = adImages
       .filter(banner => !banner.video)
+      .sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt)) // 🔹 sort by createdAt DESC
       .map(banner => ({
         ...banner,
         Image: banner.image
@@ -560,11 +560,12 @@ const getlatestnews = async function (req, res) {
           : ["uploads/noimage.jpg"],
       }));
 
+    // ✅ Final response
     return res.status(200).send({
       status: true,
       latest: latestarray,
       top: topnewsdata,
-      banners,
+      banners, // ✅ newest banners appear first
     });
 
   } catch (err) {
@@ -574,6 +575,7 @@ const getlatestnews = async function (req, res) {
       .send({ status: false, message: err.message || "Internal Server Error" });
   }
 };
+
 
 
 

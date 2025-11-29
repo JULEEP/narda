@@ -4,45 +4,54 @@ const usermodel = require("../models/usermodel");
 
 const createsubscription = async function (req, res) {
   try {
-    let doesplanexists = await subscribemodel.findOne({
-      planName: req.body.planName,
-    });
-    if (doesplanexists)
-      return res
-        .status(400)
-        .send({ status: false, message: "Plan already exists" });
+    console.log("Request Body:", req.body);
 
-    if (req.file) {
-      console.log("File information:", req.file); // Log file info for debugging
-      req.body.image = req.file.path;
+    // Directly get all fields from req.body
+    const { planName, duration, price, discount, order, advantages } = req.body;
+
+    // Create object with all fields
+    const subscriptionData = {
+      planName: planName,
+      duration: duration,
+      price: price,
+      discount: discount,
+      order: order,
+      status: "active"
+    };
+
+    // Handle advantages
+    if (advantages) {
+      try {
+        subscriptionData.advantages = JSON.parse(advantages);
+        console.log("Parsed advantages:", subscriptionData.advantages);
+      } catch (error) {
+        console.log("JSON parse error:", error);
+        subscriptionData.advantages = [advantages];
+      }
+    } else {
+      subscriptionData.advantages = [];
     }
 
-    console.log(req.body);
+    console.log("Final data to save:", subscriptionData);
 
-  const object ={};
-  object.planName= req.body.planName;
-  object.duration= req.body.duration;
-  object.price= req.body.price;
-  object.discount= req.body.discount;
-  object.advantages= JSON.parse(req.body.benefits);
-  object.image= req.body.image;
-    
-    let creadtedplan = await subscribemodel.create(object);
+    // Create in database
+    const createdPlan = await subscribemodel.create(subscriptionData);
 
-    if (creadtedplan)
-      return res.status(200).send({
-        status: true,
-        message: "Plan created successfully",
-        data: creadtedplan,
-      });
-    return res.status(400).send({ status: false, message: "Bad request" });
+    return res.status(200).send({
+      status: true,
+      message: "Plan created successfully",
+      data: createdPlan,
+    });
+
   } catch (err) {
-    console.log(err);
-    return res
-      .status(400)
-      .send({ status: false, message: "Something went wrong" });
+    console.log("Error:", err);
+    return res.status(500).send({ 
+      status: false, 
+      message: "Something went wrong" 
+    });
   }
 };
+
 
 // get all plans
 const getAlladminplans = async function (req, res) {
@@ -74,46 +83,63 @@ const getAlladminplans = async function (req, res) {
 // edit subscription
 const editsubscription = async function (req, res) {
   try {
-    // let updateData = {
-    //   planName: req.body.planName,
-    // };
+    console.log("Edit Request Body:", req.body);
 
+    // Directly get all fields from req.body
+    const { planName, duration, price, discount, order, advantages } = req.body;
 
-    const object ={};
-    object.planName= req.body.planName;
-    object.duration= req.body.duration;
-    object.price= req.body.price;
-    object.discount= req.body.discount;
-    object.advantages= JSON.parse(req.body.benefits);
+    // Create object with all fields
+    const updateData = {
+      planName: planName,
+      duration: duration,
+      price: price,
+      discount: discount,
+      order: order
+    };
 
-    if (req.file) {
-      object.image= req.file.path;
+    // Handle advantages
+    if (advantages) {
+      try {
+        updateData.advantages = JSON.parse(advantages);
+        console.log("Parsed advantages:", updateData.advantages);
+      } catch (error) {
+        console.log("JSON parse error:", error);
+        updateData.advantages = [advantages];
+      }
+    } else {
+      updateData.advantages = [];
     }
-    console.log(object,"object");
-    const plan = await subscribemodel.updateOne(
-      {_id:req.params.id},
-      { $set: object },
+
+    console.log("Final data to update:", updateData);
+
+    // Update in database
+    const updatedPlan = await subscribemodel.findByIdAndUpdate(
+      req.params.id,
+      updateData,
       { new: true }
     );
 
-    if (plan) {
-      res.status(200).json({
-        success: true,
-        message: "Updated successfully",
-        plan,
+    if (updatedPlan) {
+      return res.status(200).send({
+        status: true,
+        message: "Plan updated successfully",
+        data: updatedPlan,
       });
     } else {
-      res.status(400).json({
-        success: false,
-        message: "Bad request",
+      return res.status(400).send({
+        status: false,
+        message: "Plan not found",
       });
     }
+
   } catch (err) {
-    console.log(err);
-    res.status(400).json({ message: "Something went wrong" });
+    console.log("Error:", err);
+    return res.status(500).send({ 
+      status: false, 
+      message: "Something went wrong" 
+    });
   }
 };
-
 // delete subscription
 
 const deletesubscription = async function (req, res) {
@@ -155,47 +181,58 @@ function formatDateTime(dateStr) {
 }
 
 const getallplans = async function (req, res) {
-  //try {
+  try {
     let obj = {};
     let customerId = req.decoded.id;
+
     let plans = await subscribemodel.find();
-    let issubscribed = await paymentmodel.findOne({ customerId: customerId }).sort({createdAt:-1});
+
+    // ❌ Remove popup plans
+    plans = plans.filter(plan => !plan.popupImg);
+
+    // ❌ Remove image from response and sort by 'order'
+    plans = plans
+      .map(plan => {
+        const { image, popupImg, ...rest } = plan.toObject();
+        return rest;
+      })
+      .sort((a, b) => a.order - b.order);
+
+    let issubscribed = await paymentmodel
+      .findOne({ customerId: customerId })
+      .sort({ createdAt: -1 });
+
     if (issubscribed) {
-      console.log(issubscribed, "ajhfjhaf");
       let subscribedData = {
         expiryDate: formatDateTime(issubscribed.expirydate),
         price: issubscribed.price,
         planName: issubscribed.planName,
       };
       obj.subscribedData = subscribedData;
-      // plans.push({subscribedData: subscribedData})
     } else {
-      let subscribedDatas = {
-      };
-      obj.subscribedData = subscribedDatas;
+      obj.subscribedData = {};
     }
 
-
     obj.plans = plans;
-
-    console.log(obj,"obj");
 
     if (plans.length == 0)
       return res
         .status(400)
         .send({ status: false, message: "NO plan available" });
+
     return res.status(200).send({
       status: true,
       message: "all plans fetched successfully",
       data: obj,
     });
-  // } catch (err) {
-  //   console.log(err);
-  //   return res
-  //     .status(400)
-  //     .send({ status: false, message: "Unable to get plans data" });
-  // }
+  } catch (err) {
+    console.log(err);
+    return res
+      .status(400)
+      .send({ status: false, message: "Unable to get plans data" });
+  }
 };
+
 const getallpayments = async function (req, res) {
   try {
     let condition = {};

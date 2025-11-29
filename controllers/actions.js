@@ -5,6 +5,7 @@ const articlemodel = require("../models/articlemodel")
 const usermodel = require("../models/usermodel")
 const newsmodel = require("../models/newsmodel")
 const videosmodel = require("../models/videosmodel")
+const slidermodel = require("../models/slidermodel");
 const mongoose = require("mongoose");
 const striptags = require('striptags');
 
@@ -31,48 +32,53 @@ function formatDateTime(dateStr) {
 
 
 const likePoster = async function (req, res) {
-    try {
-        let contentId = req.body.contentId
-        req.body.name = req.decoded.email
-        req.body.userId = req.decoded.id
-        let type = req.body.type
-        let model
-        if (type === "poster") {
-            model = postermodel
-        } else if (type == "article") {
-            model = articlemodel
-        } else if (type == "video") {
-            model = videosmodel
-        }
-        const isliked = await likemodel.findOne({ contentId: contentId, userId: req.decoded.id })
-        if (isliked) {
-            const removelike = await model.findByIdAndUpdate({ _id: contentId }, { $inc: { likes: -1 } }, { new: true })
-            console.log(removelike, "removelikee")
-            const deletelike = await likemodel.findByIdAndDelete({ _id: isliked._id })
-            return res.status(200).send({ status: true, message: "Removed Like successfully" })
+  try {
+    const contentId = req.body.contentId;
+    req.body.name = req.decoded.email;
+    req.body.userId = req.decoded.id;
+    const type = req.body.type;
 
-        } else {
-            const addlike = await model.findByIdAndUpdate({ _id: contentId }, { $inc: { likes: 1 } }, { new: true })
-            if (addlike) {
-                let likedata = await likemodel.create(req.body)
-                if (likedata) {
-                    return res.status(200).json({ status: true, message: "added like successfully" })
-
-                } else {
-                    return res.status(404).json({ status: false, message: "unable to like this" })
-                }
-            } else {
-                return res.status(404).json({ status: false, message: "unable to a like" })
-            }
-
-        }
-
-
-    } catch (err) {
-        return res.status(404).json({ status: false, message: err.message })
+    let model;
+    if (type === "poster") {
+      model = postermodel;
+    } else if (type === "article") {
+      model = articlemodel;
+    } else if (type === "video") {
+      model = videosmodel;
+    } else if (type === "slider") {
+      model = slidermodel; // ✅ New type added here
+    } else {
+      return res.status(400).json({ status: false, message: "Invalid content type" });
     }
 
-}
+    const isliked = await likemodel.findOne({ contentId: contentId, userId: req.decoded.id });
+
+    if (isliked) {
+      // 🧊 If already liked → remove like
+      await model.findByIdAndUpdate({ _id: contentId }, { $inc: { likes: -1 } }, { new: true });
+      await likemodel.findByIdAndDelete({ _id: isliked._id });
+      return res.status(200).json({ status: true, message: "Removed like successfully" });
+    } else {
+      // ❤️ Add like
+      const addlike = await model.findByIdAndUpdate({ _id: contentId }, { $inc: { likes: 1 } }, { new: true });
+      if (addlike) {
+        const likedata = await likemodel.create(req.body);
+        if (likedata) {
+          return res.status(200).json({ status: true, message: "Added like successfully" });
+        } else {
+          return res.status(404).json({ status: false, message: "Unable to like this content" });
+        }
+      } else {
+        return res.status(404).json({ status: false, message: "Content not found" });
+      }
+    }
+
+  } catch (err) {
+    console.error("Like Error:", err);
+    return res.status(500).json({ status: false, message: err.message });
+  }
+};
+
 
 
 const getlikes = async function (req, res) {

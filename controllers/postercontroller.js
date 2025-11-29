@@ -397,104 +397,119 @@ const getallposters = async function (req, res) {
   try {
     const userId = req.decoded.id;
 
-    // ✅ Fetch user
     const usrdata = await usermodel.findById(userId);
-    if (!usrdata) {
+    if (!usrdata)
       return res.status(400).send({ status: false, message: "Please Login" });
-    }
 
-    // ✅ Fetch all active posters (newest first)
+    // 🧩 Fetch Posters, Ads, Sliders
     const posters = await postermodel.find({}).sort({ createdAt: -1 });
-    if (posters.length === 0) {
+    if (!posters.length)
       return res.status(404).send({ status: false, message: "No posters found" });
-    }
 
-    // ✅ Fetch all active ads (any type)
     const ads = await adsmodel.find({ status: "active" }).sort({ createdAt: -1 });
-
-    // ✅ Helper: Check if ad should be shown to this user
-    const canShowAdToUser = (adUserType, user) => {
-      const now = new Date();
-      switch (adUserType) {
-        case "both":
-          return true;
-        case "subscribed":
-          // Only show if user is subscribed and plan not expired
-          return user.subscribedUser === true && user.planExpiryDate && new Date(user.planExpiryDate) > now;
-        case "unsubscribed":
-          // Only show if user is NOT subscribed
-          return user.subscribedUser === false;
-        default:
-          return false;
-      }
-    };
+    const sliders = await slidermodel.find({ status: "active" }).sort({ createdAt: -1 });
 
     const formattedPosters = [];
     let posterCount = 0;
 
-    for (let i = 0; i < posters.length; i++) {
-      const poster = posters[i];
-      const likesArray = Array.isArray(poster.likes) ? poster.likes : [];
-      const commentsArray = Array.isArray(poster.comments) ? poster.comments : [];
-      const isLiked = likesArray.includes(userId);
+    // 🖼️ Posters loop
+    for (let poster of posters) {
+      // ✅ Poster likes
+      const likes = await likemodel.find({ contentId: poster._id.toString(), type: "poster" });
+      const totalLikes = likes.length;
+      const isLiked = likes.some(like => like.userId.toString() === userId.toString());
 
-      // ✅ Add poster
+      // ✅ Poster comments count
+      const totalComments = Array.isArray(poster.comments)
+        ? poster.comments.length
+        : poster.comments || 0;
+
       formattedPosters.push({
         _id: poster._id,
         title: poster.title,
         url: poster.url,
         expiryDate: poster.expirydate,
-        likes: likesArray.length,
-        comments: commentsArray.length,
+        likes: totalLikes,
+        comments: totalComments,
         type: "poster",
         isLiked,
         video: poster.video || null,
         image: poster.image || null,
         createdAt: poster.createdAt,
-        updatedAt: poster.updatedAt
+        updatedAt: poster.updatedAt,
       });
 
       posterCount++;
 
-      // ✅ Insert only eligible ads after posters
-      ads.forEach(ad => {
-        // Only ads meant for posters AND allowed for this user
+      // 🧩 Insert Ads after specific number of posters
+      for (let ad of ads) {
         if (
-          ad.type === "posters" &&
-          canShowAdToUser(ad.userType, usrdata) &&
-          posterCount % ad.showAfterPosters === 0
+          ["ads", "posters"].includes(ad.type) &&
+          posterCount === ad.showAfterPosters
         ) {
           formattedPosters.push({
             _id: ad._id,
             title: ad.title || "",
             url: ad.url || "",
-            expiryDate: ad.expiryDate || null,
-            type: "ads",               // Main type = ads
-            adsType: ad.type || "",    // Original type (posters/news)
+            type: "ads",
+            adsType: ad.type,
             image: ad.image || [],
+            description: ad.description || "",
             createdAt: ad.createdAt,
             userType: ad.userType || "both",
-            showAfterPosters: ad.showAfterPosters
+            showAfterPosters: ad.showAfterPosters,
           });
         }
-      });
+      }
+
+      // 🧩 Insert Sliders after specified posters (with likes + isLiked)
+      for (let slider of sliders) {
+        if (posterCount === slider.position) {  // Changed from showAfterPosters to position
+          // ✅ Slider likes
+          const sliderLikes = await likemodel.find({
+            contentId: slider._id.toString(),
+            type: "slider",
+          });
+          const totalSliderLikes = sliderLikes.length;
+          const isSliderLiked = sliderLikes.some(
+            like => like.userId.toString() === userId.toString()
+          );
+
+          // ✅ Comments & Views count
+          const totalComments =
+            typeof slider.comments === "number"
+              ? slider.comments
+              : Array.isArray(slider.comments)
+              ? slider.comments.length
+              : 0;
+
+          formattedPosters.push({
+            _id: slider._id,
+            title: slider.title,
+            sliders: slider.sliders || [],
+            type: "slider",
+            likes: totalSliderLikes,
+            comments: totalComments,
+            views: slider.views || 0,
+            isLiked: isSliderLiked,
+            createdAt: slider.createdAt,
+            updatedAt: slider.updatedAt,
+          });
+        }
+      }
     }
 
+    // ✅ Final Response
     return res.status(200).send({
       status: true,
       data: formattedPosters,
-      message: "Posters and Ads fetched successfully"
+      message: "Posters fetched with likes ✅",
     });
-
   } catch (err) {
     console.error(err);
-    return res.status(500).send({
-      status: false,
-      message: "Something went wrong: " + err.message
-    });
+    return res.status(500).send({ status: false, message: err.message });
   }
 };
-
 
 
 
@@ -557,6 +572,36 @@ const getAllAdsImages = async function (req, res) {
 
 
 
+
+const deleteAdsImage = async function (req, res) {
+  try {
+    const { id } = req.params; // ID from URL
+
+    const deletedAd = await adsImagemodel.findByIdAndDelete(id);
+
+    if (!deletedAd) {
+      return res.status(404).json({
+        success: false,
+        message: "Ad image not found",
+      });
+    }
+
+    return res.status(200).json({
+      success: true,
+      message: "Ad image deleted successfully",
+      data: deletedAd,
+    });
+  } catch (err) {
+    console.error("Delete error:", err);
+    return res.status(500).json({
+      success: false,
+      message: "Something went wrong while deleting ad image",
+    });
+  }
+};
+
+
+
 exports.getAllAdsImagesWithQuery = async (req, res) => {
   try {
     const { type } = req.query; // Get type from query params
@@ -607,14 +652,48 @@ const getadsimage = async function (req, res) {
 };
 
 const getlatestposters = async function (req, res) {
-  try {
-    let posts = await postermodel.find().sort({ createdAt: -1 });
-    console.log(posts, "postssss");
-    if (posts) return res.status(200).send({ status: true, message: posts });
-    console.log(posts, "possyts");
-    return res.status(404).send({ status: false, message: "not found" });
-  } catch (err) {
-    return res.status(404).send({ status: false, message: err.message });
+ try {
+    // 1️⃣ Fetch all posts (latest first)
+    const posts = await postermodel.find().sort({ createdAt: -1 });
+
+    // 2️⃣ Fetch all ads (latest first)
+    const ads = await adsModel.find().sort({ createdAt: -1 });
+
+    // 3️⃣ Merge logic
+    let combinedFeed = [];
+    let postIndex = 0;
+
+    for (const ad of ads) {
+      const showAfter = ad.showAfterPosters || 1; // default 1 if missing
+
+      // Add 'showAfter' number of posts
+      const postsToAdd = posts.slice(postIndex, postIndex + showAfter);
+      combinedFeed.push(...postsToAdd);
+      postIndex += showAfter;
+
+      // Add this ad
+      combinedFeed.push({
+        ...ad._doc, // Spread ad fields
+        isAd: true, // Mark for frontend distinction
+      });
+    }
+
+    // 4️⃣ Add any remaining posts (if posts > ads total)
+    if (postIndex < posts.length) {
+      combinedFeed.push(...posts.slice(postIndex));
+    }
+
+    // 5️⃣ Return the combined feed
+    return res.status(200).json({
+      status: true,
+      data: combinedFeed,
+    });
+  } catch (error) {
+    console.error("Error generating feed:", error);
+    return res.status(500).json({
+      status: false,
+      message: error.message,
+    });
   }
 };
 
@@ -692,5 +771,7 @@ module.exports.deletecomment = deletecomment;
 
 module.exports.createAdsImage = createAdsImage
 module.exports.getAllAdsImages = getAllAdsImages
+module.exports.deleteAdsImage = deleteAdsImage
+
 
 

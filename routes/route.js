@@ -227,6 +227,7 @@ router.post("/update-users", userController.editusers);
 router.post("/delete-users", userController.removeUser);
 router.post("/block-users", userController.blockUser);
 router.post("/search-by-name", userController.searchuser);
+router.delete("/delete-user/:userId", userController.deleteUser);
 router.post(
   "/get-user",
   middlewareController.isAuthentication,
@@ -473,6 +474,13 @@ router.get(
   "/admin/getAllAdsImages",
   //middlewareController.adminAuthentication,
   postercontroller.getAllAdsImages
+);
+
+
+router.delete(
+  "/admin/deletepopup/:id",
+  //middlewareController.adminAuthentication,
+  postercontroller.deleteAdsImage
 );
 
 router.get(
@@ -888,7 +896,7 @@ router.get("/get-policies", policycontroller.getpolicy);
 router.post(
   "/add-plans",
   middlewareController.adminAuthentication,
-  uploadplans.single("file"),
+  //uploadplans.single("file"),
   subscriptioncontroller.createsubscription
 );
 

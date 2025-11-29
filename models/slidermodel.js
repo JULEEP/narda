@@ -11,6 +11,7 @@ const sliderSchema = new mongoose.Schema(
     reporterId: {
       type: mongoose.Schema.Types.ObjectId,
     },
+    type: { type: String },
     reporter: { type: String },
     category: { type: String },
     language: { type: String },
@@ -21,6 +22,18 @@ const sliderSchema = new mongoose.Schema(
     tags: { type: Array },
     expirydate: { type: String },
     sliderId: { type: String },
+    //    showAfterPosters: {
+    //   type: Number,
+    //   default: 1,
+    //   min: 1,
+    //   max: 50
+    // },
+      position: {
+    type: Number,
+    default: 1,
+    min: 1,
+    max: 100
+  },
   },
   { timestamps: true }
 );

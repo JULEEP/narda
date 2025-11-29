@@ -20,53 +20,64 @@ const getallusers = async function (req, res) {
 
 
 const getuser = async function (req, res) {
-    try {
-        console.log(req.decoded, "decoded data")
-        const id=req.decoded.id
-        console.log(id)
-        console.log(req.decoded)
-        const userpaid= await paymentModel.findOne({customerId : new mongoose.Types.ObjectId(id)}).sort({ _id: -1 }).limit(1);
-       
-        console.log(userpaid, "ghadga")
-        const users = await usermodel.findOne({ _id: new mongoose.Types.ObjectId(req.decoded.id) })
-        console.log(users)
-        if(users) {
+  try {
+    const id = req.decoded.id;
 
-            await usermodel.updateOne({ _id: new mongoose.Types.ObjectId(id) },{ fcm_token:req.body.fcm_token}, { new: true });
+    const userpaid = await paymentModel
+      .findOne({ customerId: new mongoose.Types.ObjectId(id) })
+      .sort({ _id: -1 })
+      .limit(1);
 
-            let obj={
-                userId: users._id,
-                name:users.name,
-                email: users.email,
-                image: (users.profilepic) ? users.profilepic : `uploads\\randomuser.jpg`,
-                phone: users.phone,
-                city: users.city,
-                state: users.state,
-                address: `${users.state}, ${users.city}`,
-                bookmark: users.bookmarks,
-                isBlocked: users.isBlocked,
-                isSubscribedUser: users.subscribedUser,
-                planExpiryDate: users.planExpiryDate
-            }
+    const users = await usermodel.findOne({
+      _id: new mongoose.Types.ObjectId(req.decoded.id),
+    });
 
+    if (users) {
+      await usermodel.updateOne(
+        { _id: new mongoose.Types.ObjectId(id) },
+        { fcm_token: req.body.fcm_token },
+        { new: true }
+      );
 
-            if(userpaid && (userpaid.expirydate > Date.now() )){
-                obj.isPaid=true
-            
-            }else{
-                obj.isPaid=false
-            }
-            return res.status(200).send({status:true, data:obj, message:"user found successfully"})
+      // ✅ Default image URL here
+      const defaultImage =
+        "https://th.bing.com/th/id/OIP.HiaEyZc2MvcfEAwP-IJ5pgHaHa?w=209&h=209&c=7&r=0&o=7&cb=ucfimgc2&dpr=1.8&pid=1.7&rm=3";
 
-        }
-        return res.status(400).send({status:false, message:"User not found"})
-    
+      const obj = {
+        userId: users._id,
+        name: users.name,
+        email: users.email,
+        image: users.profilepic ? users.profilepic : defaultImage, // ✅ changed line
+        phone: users.phone,
+        city: users.city,
+        state: users.state,
+        address: `${users.state}, ${users.city}`,
+        bookmark: users.bookmarks,
+        isBlocked: users.isBlocked,
+        isSubscribedUser: users.subscribedUser,
+        planExpiryDate: users.planExpiryDate,
+      };
 
-    } catch (err) {
-        console.log(err,"error");
-        return res.status(400).send({status:false, message:err.message})
+      if (userpaid && userpaid.expirydate > Date.now()) {
+        obj.isPaid = true;
+      } else {
+        obj.isPaid = false;
+      }
+
+      return res
+        .status(200)
+        .send({ status: true, data: obj, message: "User found successfully" });
     }
-}
+
+    return res
+      .status(400)
+      .send({ status: false, message: "User not found" });
+  } catch (err) {
+    console.error("Get User Error:", err);
+    return res.status(400).send({ status: false, message: err.message });
+  }
+};
+
 
 
 
@@ -221,6 +232,28 @@ const addlocations= async function(req,res){
 
 
 
+const deleteUser = async (req, res) => {
+  try {
+    const userId = req.params.userId; // ✅ userId from params
+
+    const deletedUser = await usermodel.deleteOne({ _id: userId });
+
+    if (!deletedUser || deletedUser.deletedCount === 0) {
+      return res
+        .status(400)
+        .send({ status: false, message: "Unable to delete user" });
+    }
+
+    return res
+      .status(200)
+      .send({ status: true, message: "User deleted successfully" });
+  } catch (err) {
+    console.error("Delete User Error:", err);
+    return res.status(500).send({ status: false, message: err.message });
+  }
+};
+
+
 
 module.exports.getallusers = getallusers
 module.exports.addusers = addusers
@@ -231,3 +264,4 @@ module.exports.getuser = getuser
 module.exports.addcategory=addcategory
 module.exports.addlocations= addlocations
 module.exports.blockUser= blockUser
+module.exports.deleteUser = deleteUser

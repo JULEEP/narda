@@ -32,27 +32,38 @@ const addbanner = async function (req, res) {
 };
 
 const getAllbanners = async function (req, res) {
-  try {
+ try {
     let condition = {};
-    let regex = new RegExp(req.query.searchQuery, "i");
-    if (req.query.searchQuery !== "") {
-      condition = {
-        $or: [{ name: regex }],
-      };
+    const searchQuery = req.query.searchQuery?.trim() || "";
+
+    if (searchQuery !== "") {
+      const regex = new RegExp(searchQuery, "i");
+      condition = { $or: [{ name: regex }] };
     }
 
-    console.log(condition);
-    const banners = await bannerModel.find(condition).sort({ createdDate: -1 });
-    if (banners) {
-      res.status(200).json({
-        success: true,
-        message: "Banner's has been retrived successfully ",
-        banners: banners,
+    // 🔹 Sort by newest first (descending order)
+    const banners = await bannerModel
+      .find(condition)
+      .sort({ createdAt: -1 }); // or use createdDate if that's your field name
+
+    if (!banners || banners.length === 0) {
+      return res.status(404).json({
+        success: false,
+        message: "No banners found",
       });
     }
+
+    res.status(200).json({
+      success: true,
+      message: "Banners retrieved successfully",
+      banners,
+    });
   } catch (err) {
-    console.log(err);
-    res.status(400).json({ success: false, message: "Something went wrong" });
+    console.error(err);
+    res.status(500).json({
+      success: false,
+      message: "Something went wrong while fetching banners",
+    });
   }
 };
 

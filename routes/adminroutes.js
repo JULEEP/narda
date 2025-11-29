@@ -279,9 +279,9 @@ router.post(
   adsController.update
 );
 
-router.post(
+router.delete(
   "/admin/ads/delete",
-  middlewareController.adminAuthentication,
+  //middlewareController.adminAuthentication,
   adsController.deleteads
 );
 

@@ -34,7 +34,7 @@ const createsliders = async function (req, res) {
   try {
     const logDate = new Date().toISOString();
 
-    // Fetch category
+    // Fetch reporter info
     const reporterschema = await reporterModel.findOne(
       { _id: req.body.reporterId },
       { name: 1 }
@@ -44,52 +44,68 @@ const createsliders = async function (req, res) {
       .toString()
       .padStart(3, "0");
 
-    // image for multiple purposes
+    // 🔹 Validate position
+    const position = parseInt(req.body.position) || 1;
+    if (position < 1 || position > 100) {
+      return res.status(400).json({
+        success: false,
+        message: "Position must be between 1 and 100",
+      });
+    }
+
+    // 🔹 Handle file uploads
     let imageArray = [];
     const uploadFiles = req.files && req.files.sliders ? req.files.sliders : [];
-    uploadFiles.map((item) => {
+    uploadFiles.forEach((item) => {
       imageArray.push(item.path);
     });
 
+    // 🔹 Auto-generate sliderId
     req.body.sliderId = "naraslid" + randomNumber;
 
-    // Default to empty array if req.body.tag is empty or undefined
+    // 🔹 Handle tags (comma-separated string to array)
     let tags = [];
     if (req.body.tags) {
-      tags = req.body.tags.split(",");
+      tags = req.body.tags.split(",").map((tag) => tag.trim());
     }
 
-    const testimoniObj = new slidermodel({
+    // 🔹 Create the slider document
+    const sliderObj = new slidermodel({
       sliderId: req.body.sliderId,
-      //   sliders: req.body.sliders,
-      sliders: uploadFiles.length > 0 ? imageArray : console.log("No Sliders"),
+      sliders: uploadFiles.length > 0 ? imageArray : [],
       title: req.body.title,
       createdBy: req.userId,
       size: req.body.size,
       reporterId: req.body.reporterId,
       reporter: reporterschema ? reporterschema.name : "",
-      visible: req.body.visible,
+      //visible: req.body.visible,
       status: req.body.status,
-      tags: tags,
-      // tags: JSON.parse(req.body.tags),
-      //tags: req.body.tag.split(","),
-      //tags: req.body.tag ? req.body.tag.split(","),
+      //tags,
       expirydate: req.body.expirydate,
+      position: position, // ✅ Changed from showAfterPosters to position
+      type: req.body.type || "",
+      createdAt: logDate,
     });
 
-    const saveSlider = await testimoniObj.save();
+    // 🔹 Save to database
+    const saveSlider = await sliderObj.save();
+
     if (saveSlider) {
-      res
-        .status(200)
-        .json({ success: true, message: "Slider created successfully" });
+      return res.status(200).json({
+        success: true,
+        message: "Slider created successfully ✅",
+        data: saveSlider,
+      });
     } else {
-      res.status(400).json({ success: false, message: "Bad request" });
+      return res.status(400).json({ success: false, message: "Bad request" });
     }
   } catch (err) {
-    console.log(err);
-    return res
-      .status(500)
-      .send({ status: false, message: "Something went wrong" });
+    console.error(err);
+    return res.status(500).json({
+      success: false,
+      message: "Something went wrong ❌",
+      error: err.message,
+    });
   }
 };
 
@@ -145,61 +161,87 @@ const editadminslider = async function (req, res) {
   try {
     const logDate = new Date().toISOString();
 
-    // Fetch category
+    // Fetch reporter info
     const reporterschema = await reporterModel.findOne(
       { _id: req.body.reporterId },
       { name: 1 }
     );
 
-    // image for multiple purposes
+    // 🔹 Validate position
+    const position = parseInt(req.body.position) || 1;
+    if (position < 1 || position > 100) {
+      return res.status(400).json({
+        success: false,
+        message: "Position must be between 1 and 100",
+      });
+    }
+
+    // 🔹 Handle file uploads
     let imageArray = [];
     const uploadFiles = req.files && req.files.sliders ? req.files.sliders : [];
-    uploadFiles.map((item) => {
+    uploadFiles.forEach((item) => {
       imageArray.push(item.path);
     });
 
-    // Default to empty array if req.body.tag is empty or undefined
+    // 🔹 Handle tags (comma-separated string to array)
     let tags = [];
     if (req.body.tags) {
-      tags = req.body.tags.split(",");
+      tags = req.body.tags.split(",").map((tag) => tag.trim());
     }
 
     console.log("req.body------------------------------:", req.body);
+
+    // 🔹 Build update object
+    const updateFields = {
+      title: req.body.title,
+      size: req.body.size,
+      reporterId: req.body.reporterId,
+      reporter: reporterschema ? reporterschema.name : "",
+      //visible: req.body.visible,
+      status: req.body.status,
+      //tags: tags,
+      expirydate: req.body.expirydate,
+      position: position, // ✅ Changed from showAfterPosters to position
+      updatedAt: logDate,
+    };
+
+    // 🔹 Add sliders only if new files uploaded
+    if (uploadFiles.length > 0) {
+      updateFields.sliders = imageArray;
+    }
+
+    // 🔹 Add type only if provided
+    if (req.body.type) {
+      updateFields.type = req.body.type;
+    }
+
+    // 🔹 Update slider document
     const slider = await slidermodel.updateOne(
       { _id: req.params.id },
-      {
-        $set: {
-          sliders:
-            uploadFiles.length > 0 ? imageArray : console.log("No Sliders"),
-          title: req.body.title,
-          size: req.body.size,
-          reporterId: req.body.reporterId,
-          reporter: reporterschema ? reporterschema.name : "",
-          visible: req.body.visible,
-          status: req.body.status,
-          // tags: JSON.parse(req.body.tags),
-          tags: tags,
-          expirydate: req.body.expirydate,
-          updatedAt: logDate,
-        },
-      },
+      { $set: updateFields },
       { new: true }
     );
 
-    if (slider) {
+    if (slider.modifiedCount > 0) {
       res.status(200).json({
         success: true,
-        message: "Upated successfullly",
+        message: "Slider updated successfully ✅",
       });
     } else {
-      res.status(400).json({ success: false, message: "Bad request" });
+      res.status(400).json({
+        success: false,
+        message: "No changes made or slider not found",
+      });
     }
   } catch (err) {
-    console.log(err);
-    res.status(400).json({ success: false, message: "Something went wrong" });
+    console.error(err);
+    res.status(500).json({
+      success: false,
+      message: "Something went wrong ❌",
+      error: err.message,
+    });
   }
 };
-
 // const editadminslider = async function (req, res) {
 //   try {
 //     const logDate = new Date().toISOString();

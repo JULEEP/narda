@@ -10,6 +10,7 @@ const subscriptions = new mongoose.Schema(
     status: { type: String },
     image: { type: String },
     popupImg: { type: String, }, // सिर्फ़ popup image
+    order: { type: Number, }, // Order field to control display order
   },
   { timestamps: true }
 );

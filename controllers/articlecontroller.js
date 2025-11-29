@@ -311,27 +311,18 @@ const addmore = async function (req, res) {
 
 const editarticle = async (req, res) => {
   try {
-    //   const files = req.files;
-
-    // console.log(req.file,"req.file++++++++++++++++++++++++");
-    //const picture = (files)?files.path:console.log('no file');
-
-
     const reporterschema = await reporterModel.findOne(
       { _id: req.body.reporterId },
       { name: 1 }
     );
 
-
     const articleId = req.params.id;
-    var category = JSON.parse(req.body.category);
-    var location = JSON.parse(req.body.location);
+    const category = JSON.parse(req.body.category);
+    const location = JSON.parse(req.body.location);
     const categoryIds = category.map(cat => new mongoose.Types.ObjectId(cat.value));
-
     const locations = location.map(loc => new mongoose.Types.ObjectId(loc.value));
 
     const files = req.files.map(file => file.path);
-
 
     const object = {
       reporterId: req.body.reporterId,
@@ -351,7 +342,8 @@ const editarticle = async (req, res) => {
       location: location,
       locationId: locations,
       tags: req.body.tagsArray,
-      createdAt:moment().tz("Asia/Kolkata").format("YYYY-MM-DD hh:mm A"), 
+      allowCopy: req.body.allowCopy,  // ✅ yahan add kiya
+      createdAt: moment().tz("Asia/Kolkata").format("YYYY-MM-DD hh:mm A"), 
       updatedAt: moment().tz("Asia/Kolkata").format("YYYY-MM-DD hh:mm A"),
     };
 

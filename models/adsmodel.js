@@ -13,7 +13,6 @@ const articleSchema = new mongoose.Schema(
     },
     type: {
         type: String,
-        enum: ["news", "articles",'posters',"videos"]
     },
     url: {
       type: String,

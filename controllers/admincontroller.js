@@ -78,49 +78,61 @@ const login = async (req, res) => {
 
 const otplogin = async function (req, res) {
   try {
-    if (!req.body.phone) {
-      return res
-        .status(400)
-        .send({ status: false, message: "Please Enter Phone Numbers" });
+    const { phone } = req.body;
+
+    if (!phone) {
+      return res.status(400).send({
+        status: false,
+        message: "Please Enter Phone Number",
+      });
     }
 
-    const user = await usermodel.findOne({ phone: req.body.phone });
-    // if (!user) {
-    //   return res.status(400).send({ status: false, message: "User not found" });
-    // }
-    if (user && user.isBlocked == true) {
+    const user = await usermodel.findOne({ phone });
+
+    if (user && user.isBlocked === true) {
       return res.status(400).send({
         status: false,
         message: "Your account is blocked. Please contact support team",
       });
     }
-    if (user && user.status == "inactive") {
+
+    if (user && user.status === "inactive") {
       return res.status(400).send({
         status: false,
         message: "Your account is inactive. Please contact support team",
       });
     }
 
-    const otp = Math.floor(1000 + Math.random() * 9000).toString(); // Generate a 6-digit OTP
-    const userPhone = req.body.phone;
-    // Construct the URL for sending SMS
-    const url = `https://smslogin.co/v3/api.php?username=DIGITALRAIZ&apikey=ff0e526944bb7c7bf83e&mobile=${userPhone}&senderid=DRCSOT&message=Dear+Customer%2C+Your+OTP+For+registration+is+${otp}+use+this+password+to+validate+your+registration+or+Login+-DigitalRaiz+Creative+Solutions+Pvt+Ltd&templateid=1207173502517696283`;
+    // ✅ Static OTP (for testing)
+    const otp = "1234";
 
-    // Send SMS using Axios
-    const response = await axios.get(url);
-    // Update OTP in the database (or create a new record if not found)
-    const otpCreate = await userOtp.findOneAndUpdate(
-      { phone: req.body.phone }, // Find the user by phone number
-      { Otp: otp }, // Update the OTP field
-      { new: true, upsert: true } // `new: true` returns the updated document, `upsert: true` creates a new document if not found
+    // 🚫 Commented out SMS Gateway API call
+    /*
+    const userPhone = phone;
+    const url = `https://smslogin.co/v3/api.php?username=DIGITALRAIZ&apikey=ff0e526944bb7c7bf83e&mobile=${userPhone}&senderid=DRCSOT&message=Dear+Customer%2C+Your+OTP+For+registration+is+${otp}+use+this+password+to+validate+your+registration+or+Login+-DigitalRaiz+Creative+Solutions+Pvt+Ltd&templateid=1207173502517696283`;
+    await axios.get(url);
+    */
+
+    // ✅ Update OTP in DB (create if not exist)
+    await userOtp.findOneAndUpdate(
+      { phone },
+      { Otp: otp },
+      { new: true, upsert: true }
     );
 
-    // Send the success response after OTP is updated and SMS is sent
-    return res
-      .status(200)
-      .send({ status: true, message: "OTP sent successfully" });
+    // ✅ Return OTP for testing purpose
+    return res.status(200).send({
+      status: true,
+      message: "OTP sent successfully ✅ (Static Mode)",
+      otp: otp,
+    });
+
   } catch (err) {
-    return res.status(400).send({ status: err.status, message: err.message });
+    console.error("OTP Login Error:", err);
+    return res.status(400).send({
+      status: false,
+      message: err.message,
+    });
   }
 };
 

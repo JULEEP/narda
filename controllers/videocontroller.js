@@ -189,106 +189,95 @@ const usermodel = require("../models/usermodel");
 
 const getallvideos = async function (req, res) {
   try {
-    console.log(req.decoded.id);
     const userId = req.decoded.id;
 
-    const usrdata = await usermodel.findById({ _id: req.decoded.id });
-    console.log(usrdata.categories,"usrdata.categories");
-    console.log(usrdata.locations,"usrdata.locations");
-    let userLocations = usrdata.locations;
+    const usrdata = await usermodel.findById(userId);
     if (!usrdata)
-      return res.status(400).send({ status: false, message: "please Login" });
-    let userCategories = usrdata.categories;
+      return res.status(400).send({ status: false, message: "Please login" });
 
-    let condition = {};
-    condition.status='Active';
+    const userCategories = usrdata.categories || [];
+    const userLocations = usrdata.locations || [];
 
-if (userCategories && userCategories.length > 0) {
-  const categoryIds = userCategories.map(cate => new mongoose.Types.ObjectId(cate));
-  if (!condition.$or) {
-    condition.$or = [];
-  }
-  condition.$or.push({ categoryId: { $in: categoryIds } });
-}
-
-if (userLocations && userLocations.length > 0) {
-  if (!condition.$or) {
-    condition.$or = [];
-  }
-  const locations = userLocations.map(loc => new mongoose.Types.ObjectId(loc));
-
-  condition.$or.push({ locationId: { $in: locations } });
-}
-
-console.log("condition", "condition");
-
-let videos = await videomodel.find(condition).sort({ createdAt: -1 });
-
-    // if (videos.length == 0)
-    //   return res
-    //     .status(400)
-    //     .send({ status: false, message: "NOt found",data:[] });
-
-    let adds = await adsmodel.find({type:"videos"}).sort({createdAt: -1});
-    let j=0;
-
-    console.log(adds.length,"adds.length");
-
-    let videoarray = [];
-    for (let i = 0; i < videos.length; i++) {
-      // if(videos[i].video)
-
-      let obj = {
-        id: videos[i]._id.toString(),
-        video: videos[i].video,
-        title: videos[i].title,
-        premium: videos[i].isPremium ? videos[i].isPremium : false,
-        description: videos[i].description,
-        shortdescription: striptags(videos[i].description),
-        bookmark: videos[i].bookmark,
-        time: videos[i].timetoread,
-        youtube:videos[i].youtube,
-        thumbnail: videos[i].banner? videos[i].banner: "uploads\\thumbnail.jpg",
-        type:"videos",
-        url:'',
-        sort:i
-      };
-      videoarray.push(obj);
-      if(i%3 == 0)
-        {
-          if(j<adds.length && adds.length>0)
-          {       
-            const addobj = {
-              id: adds[j]._id.toString(),
-              video: "",
-              thumbnail: adds[j].image,
-              title: adds[j].title,
-              description: adds[j].description,
-              shortdescription: adds[j].description,
-              youtube:'',
-              bookmark: '',
-              time: '',
-              premium: false,
-              createdAt: formatDateTime(adds[j].createdAt),
-              type:"add",
-              url:adds[j].url,
-              sort:i
-            };
-            videoarray.push(addobj);
-            j=j+1;
-          }
-        }
+    let condition = { status: 'Active' };
+    if (userCategories.length > 0 || userLocations.length > 0) {
+      condition.$or = [];
+      if (userCategories.length > 0) {
+        condition.$or.push({ categoryId: { $in: userCategories.map(c => new mongoose.Types.ObjectId(c)) } });
+      }
+      if (userLocations.length > 0) {
+        condition.$or.push({ locationId: { $in: userLocations.map(l => new mongoose.Types.ObjectId(l)) } });
+      }
     }
 
-    videoarray.sort((a, b) => a.sort - b.sort);
-    
-    return res.status(200).send({ status: true, data: videoarray });
-  } catch (err) {
+    // Fetch videos WITHOUT populate
+    let videos = await videomodel.find(condition).sort({ createdAt: -1 });
 
+    let adds = await adsmodel.find({ type: "videos" }).sort({ createdAt: -1 });
+
+    let videoarray = [];
+    let j = 0;
+
+    for (let i = 0; i < videos.length; i++) {
+      const video = videos[i];
+
+      const obj = {
+        id: video._id.toString(),
+        video: video.video,
+        title: video.title,
+        premium: video.isPremium || false,
+        description: video.description,
+        shortdescription: striptags(video.description),
+        bookmark: video.bookmark || false,
+        time: video.timetoread || "",
+        youtube: video.youtube || "",
+        thumbnail: video.banner || "uploads/thumbnail.jpg",
+        type: "videos",
+        url: '',
+        sort: i,
+        categories: video.category || [], // ✅ direct array from DB
+        locations: video.location || [], // ✅ direct array from DB
+      };
+
+      videoarray.push(obj);
+
+      // Insert ads after every 3 videos
+      if (i % 3 === 0 && adds.length > 0 && j < adds.length) {
+        const add = adds[j];
+        videoarray.push({
+          id: add._id.toString(),
+          video: "",
+          thumbnail: add.image,
+          title: add.title,
+          description: add.description,
+          shortdescription: add.description,
+          youtube: '',
+          bookmark: '',
+          time: '',
+          premium: false,
+          createdAt: formatDateTime(add.createdAt),
+          type: "add",
+          url: add.url,
+          sort: i + 0.5,
+        });
+        j++;
+      }
+    }
+
+    // Sort by sort index
+    videoarray.sort((a, b) => a.sort - b.sort);
+
+    return res.status(200).send({
+      status: true,
+      data: videoarray,
+      message: "Videos fetched successfully with direct category array ✅",
+    });
+
+  } catch (err) {
     console.log(err);
     return res.status(500).send({ status: false, message: err.message });
   }
 };
+
 
 const getlatestVideos = async function (req, res) {
   try {
