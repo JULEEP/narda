@@ -3,6 +3,8 @@ const brcyptjs = require("bcrypt");
 const jwt = require("jsonwebtoken");
 const userOtp = require("../models/otp");
 const axios = require("axios");
+const admin = require("firebase-admin");
+
 
 const register = async function (req, res) {
   try {
@@ -145,78 +147,195 @@ function generateToken(user) {
   );
 }
 
-const verifyotp = async function (req, res) {
+// const verifyotp = async function (req, res) {
  
+//   try {
+//     if (!req.body.phone || !req.body.otp) {
+//       return res
+//         .status(400)
+//         .send({
+//           status: false,
+//           message: "Please provide phone, otp and FcmToken",
+//         });
+//     }
+//     let data;
+//     if(req.body.phone == '9999999999' || req.body.phone == '0000000000') {
+//         data = {
+//         phone: req.body.phone,
+//       };
+//     }else{
+//        data = {
+//         phone: req.body.phone,
+//         Otp: req.body.otp,
+//       };
+//     }
+//     const userOtps = await userOtp.findOne(data);
+
+
+//     if (!userOtps) {
+//       return res.status(400).send({ status: false, message: "Invalid OTP" });
+//     }
+//     const user = await usermodel.findOne({ phone: req.body.phone });
+
+//     if (!user) {
+//       // const newuser = await RegisterNewUser(req.body);
+//       const users = await usermodel.create({
+//         phone: req.body.phone,
+//         fcm_token: req.body.fcm_token,
+//         status: "active",
+//         is_notify: true,
+//       });
+
+//         const token = generateToken(users);
+//       return res
+//         .status(200)
+//         .send({
+//           status: true,
+//           token: token,
+//           data: users,
+//           newUser: true,
+//           message: "Otp verified successfully",
+//         });
+//     }
+
+//     const users = await usermodel.findOneAndUpdate(
+//       { phone: req.body.phone },
+//       { fcm_token: req.body.fcm_token }
+//     );
+//     const token = generateToken(users);
+//     return res
+//       .status(200)
+//       .send({
+//         status: true,
+//         token: token,
+//         data: user,
+//         newUser: false,
+//         message: "Otp verified successfully",
+//       });
+//   } catch (err) {
+//     console.log(err, "errrorrr");
+//     return res
+//       .status(400)
+//       .send({ status: false, message: "Something went wrong" });
+//   }
+  
+// };
+
+
+const verifyotp = async function (req, res) {
   try {
-    if (!req.body.phone || !req.body.otp) {
-      return res
-        .status(400)
-        .send({
+
+    if (!req.body.phone || (!req.body.otp && !req.body.firebaseToken)) {
+      return res.status(400).send({
+        status: false,
+        message: "Please provide phone and otp or firebaseToken",
+      });
+    }
+
+    const { phone, otp, firebaseToken, fcm_token } = req.body;
+
+    let user;
+
+    // 🔥 If firebaseToken provided → verify via Firebase
+    if (firebaseToken) {
+      try {
+        const decodedToken = await admin.auth().verifyIdToken(firebaseToken);
+
+        const phoneNumber = decodedToken.phone_number;
+
+        if (!phoneNumber) {
+          return res.status(400).send({
+            status: false,
+            message: "Phone number not found in Firebase token",
+          });
+        }
+
+        // Extract Indian mobile number (+91XXXXXXXXXX → XXXXXXXXXX)
+        const mobile = phoneNumber.replace('+91', '');
+
+        if (mobile !== phone) {
+          return res.status(400).send({
+            status: false,
+            message: "Phone number mismatch",
+          });
+        }
+
+      } catch (err) {
+        return res.status(400).send({
           status: false,
-          message: "Please provide phone, otp and FcmToken",
+          message: "Invalid or expired Firebase token",
         });
-    }
-    let data;
-    if(req.body.phone == '9999999999' || req.body.phone == '0000000000') {
+      }
+
+    } else {
+      // 🔐 Old OTP Logic (UNCHANGED)
+      let data;
+
+      if (phone == '9999999999' || phone == '0000000000') {
+        data = { phone };
+      } else {
         data = {
-        phone: req.body.phone,
-      };
-    }else{
-       data = {
-        phone: req.body.phone,
-        Otp: req.body.otp,
-      };
+          phone,
+          Otp: otp,
+        };
+      }
+
+      const userOtps = await userOtp.findOne(data);
+
+      if (!userOtps) {
+        return res.status(400).send({
+          status: false,
+          message: "Invalid OTP",
+        });
+      }
     }
-    const userOtps = await userOtp.findOne(data);
 
+    // 🔎 Find user
+    user = await usermodel.findOne({ phone });
 
-    if (!userOtps) {
-      return res.status(400).send({ status: false, message: "Invalid OTP" });
-    }
-    const user = await usermodel.findOne({ phone: req.body.phone });
-
+    // 🆕 If user not exists → create
     if (!user) {
-      // const newuser = await RegisterNewUser(req.body);
       const users = await usermodel.create({
-        phone: req.body.phone,
-        fcm_token: req.body.fcm_token,
+        phone,
+        fcm_token,
         status: "active",
         is_notify: true,
       });
 
-        const token = generateToken(users);
-      return res
-        .status(200)
-        .send({
-          status: true,
-          token: token,
-          data: users,
-          newUser: true,
-          message: "Otp verified successfully",
-        });
-    }
+      const token = generateToken(users);
 
-    const users = await usermodel.findOneAndUpdate(
-      { phone: req.body.phone },
-      { fcm_token: req.body.fcm_token }
-    );
-    const token = generateToken(users);
-    return res
-      .status(200)
-      .send({
+      return res.status(200).send({
         status: true,
         token: token,
-        data: user,
-        newUser: false,
+        data: users,
+        newUser: true,
         message: "Otp verified successfully",
       });
+    }
+
+    // 🔄 Update FCM token for existing user
+    await usermodel.findOneAndUpdate(
+      { phone },
+      { fcm_token }
+    );
+
+    const token = generateToken(user);
+
+    return res.status(200).send({
+      status: true,
+      token: token,
+      data: user,
+      newUser: false,
+      message: "Otp verified successfully",
+    });
+
   } catch (err) {
-    console.log(err, "errrorrr");
-    return res
-      .status(400)
-      .send({ status: false, message: "Something went wrong" });
+    console.log(err, "error");
+    return res.status(400).send({
+      status: false,
+      message: "Something went wrong",
+    });
   }
-  
 };
 
 const editusers = async function (req, res) {
