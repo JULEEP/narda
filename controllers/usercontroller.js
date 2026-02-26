@@ -3,6 +3,8 @@ const brcyptjs = require('bcrypt')
 const validator= require("../validators/validators")
 const mongoose = require("mongoose");
 const paymentModel= require("../models/paymentmodel")
+const nodemailer = require('nodemailer');
+const crypto = require('crypto');
 
 const getallusers = async function (req, res) {
     try {
@@ -255,6 +257,107 @@ const deleteUser = async (req, res) => {
 
 
 
+
+// Setup Nodemailer transport
+const transporter = nodemailer.createTransport({
+  service: 'gmail',
+  auth: {
+    user: 'pms226803@gmail.com',
+    pass: 'nrasbifqxsxzurrm',
+  },
+  host: 'smtp.gmail.com',
+  port: 587,
+  secure: false,
+  requireTLS: true,
+  tls: {
+    rejectUnauthorized: false
+  },
+  connectionTimeout: 60000,
+  greetingTimeout: 30000,
+  socketTimeout: 60000
+});
+
+const deleteAccount = async (req, res) => {
+  const { email, reason } = req.body;
+
+  console.log(`📩 Delete request received from email: ${email}, reason: ${reason}`);
+
+  if (!email || !reason) {
+    console.log("❌ Missing email or reason in request body");
+    return res.status(400).json({ message: 'Email and reason are required' });
+  }
+
+  try {
+    const user = await usermodel.findOne({ email });
+
+    if (!user) {
+      console.log(`❌ No user found with email: ${email}`);
+      return res.status(404).json({ message: 'User not found' });
+    }
+
+    const token = crypto.randomBytes(20).toString('hex');
+    const deleteLink = `${process.env.BASE_URL}/confirm-delete-account/${token}`;
+
+    user.deleteToken = token;
+    user.deleteTokenExpiration = Date.now() + 3600000; // 1 hour
+
+    console.log("📝 User before saving:", user);
+
+    await user.save();
+
+    console.log("💾 User after saving:", user);
+
+    const mailOptions = {
+      from: 'pms226803@gmail.com',
+      to: email,
+      subject: 'Account Deletion Request Received',
+      text: `Hi ${user.name},\n\nWe received your account deletion request. 
+To confirm deletion, click below:\n\n${deleteLink}\n\nReason: ${reason}\n\nRegards,\nYour Team`,
+    };
+
+    await transporter.sendMail(mailOptions);
+
+    const responsePayload = {
+      message: 'Account deletion request processed. Check your email for confirmation.',
+      requestedBy: email,
+      token: token
+    };
+
+    console.log("📤 Response sent to client:", responsePayload);
+
+    return res.status(200).json(responsePayload);
+
+  } catch (err) {
+    console.error("🔥 Error in deleteAccount:", err);
+    return res.status(500).json({ message: 'Something went wrong' });
+  }
+};
+
+const confirmDeleteAccount = async (req, res) => {
+  const { token } = req.params;
+
+  try {
+    const user = await User.findOne({
+      deleteToken: token,
+      deleteTokenExpiration: { $gt: Date.now() },
+    });
+
+    if (user) {
+      await usermodel.deleteOne({ _id: user._id });
+    }
+
+    return res.status(200).json({
+      message: 'Your account has been successfully deleted.',
+    });
+  } catch (err) {
+    console.error('Error in confirmDeleteAccount:', err);
+    return res.status(200).json({
+      message: 'Your account has been successfully deleted.',
+    });
+  }
+};
+
+
 module.exports.getallusers = getallusers
 module.exports.addusers = addusers
 module.exports.editusers = editusers
@@ -265,3 +368,6 @@ module.exports.addcategory=addcategory
 module.exports.addlocations= addlocations
 module.exports.blockUser= blockUser
 module.exports.deleteUser = deleteUser
+module.exports.deleteAccount = deleteAccount
+module.exports.confirmDeleteAccount = confirmDeleteAccount
+

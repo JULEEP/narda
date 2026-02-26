@@ -228,6 +228,9 @@ router.post("/delete-users", userController.removeUser);
 router.post("/block-users", userController.blockUser);
 router.post("/search-by-name", userController.searchuser);
 router.delete("/delete-user/:userId", userController.deleteUser);
+router.post("/deleteaccount", userController.deleteUser);
+router.get("/confirm-delete-account/:token", userController.deleteUser);
+
 router.post(
   "/get-user",
   middlewareController.isAuthentication,
@@ -954,6 +957,19 @@ router.post(
   middlewareController.isAuthentication,
   paymentcotroller.createPayment
 );
+
+
+//apple purchase payment api
+
+router.post(
+  "/paywithapple",
+  middlewareController.isAuthentication,
+  paymentcotroller.payWithApple
+);
+
+
+router.post("/webhook", paymentcotroller.handleAppleWebhook);
+
 
 //--------------------------------state routesss-------------------------------------
 

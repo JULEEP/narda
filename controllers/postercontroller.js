@@ -14,26 +14,29 @@ const userFcmFunction = require("../utilis/fcmFunction");
 
 //preventing adds to premium members
 const paymentmodel = require("../models/paymentmodel");
+const sendPushNotification = require('../utilis/sendNotification'); // Step 2
+
 
 const { DateTime } = require("luxon");
 
 const createposter = async function (req, res) {
   try {
+    // 🔹 Random poster number
     const randomNumber = Math.floor(Math.random() * 1000)
       .toString()
       .padStart(3, "0");
 
-    // Handle multiple uploaded files
+    // 🔹 Files
     const files = req.files || [];
     const picturePaths = files.map((file) => file.path);
 
-    // Fetch reporter
+    // 🔹 Reporter
     const reporter = await reporterModel.findOne(
       { _id: req.body.reporterId },
       { name: 1 }
     );
 
-    // Parse tags, category, and location
+    // 🔹 Parse fields
     const tags = req.body.tags ? req.body.tags.split(",") : [];
     const category = JSON.parse(req.body.category || "[]");
     const location = JSON.parse(req.body.location || "[]");
@@ -45,16 +48,15 @@ const createposter = async function (req, res) {
       (loc) => new mongoose.Types.ObjectId(loc.value)
     );
 
-    // ✅ Use expirydate safely (no timezone conversion needed)
+    // 🔹 Expiry date
     let expirydate = null;
     if (req.body.expirydate && !isNaN(Date.parse(req.body.expirydate))) {
       expirydate = new Date(req.body.expirydate);
     }
 
-    // Set type field (default "general" if not provided)
     const type = req.body.type || "general";
 
-    // Prepare object
+    // 🔹 Poster object
     const object = {
       reporterId: req.body.reporterId,
       reporter: reporter ? reporter.name : "",
@@ -67,23 +69,103 @@ const createposter = async function (req, res) {
       tags,
       image: picturePaths,
       title: req.body.title || "",
-      type, // ✅ added type field
-      expirydate, // ✅ safe lowercase field
-      createdAt: new Date().toLocaleString("en-IN", { timeZone: "Asia/Kolkata" }),
-      updatedAt: new Date().toLocaleString("en-IN", { timeZone: "Asia/Kolkata" }),
+      type,
+      expirydate,
+      createdAt: new Date().toLocaleString("en-IN", {
+        timeZone: "Asia/Kolkata",
+      }),
+      updatedAt: new Date().toLocaleString("en-IN", {
+        timeZone: "Asia/Kolkata",
+      }),
     };
 
-    // Save to DB
+    // ✅ Save poster
     const createdData = await postermodel.create(object);
 
-    // Format expirydate for readable response (IST)
+    // ================= PUSH NOTIFICATION =================
+
+    // 🔹 Fetch users with FCM token
+    const users = await usermodel.find(
+      { fcm_token: { $exists: true, $ne: null } },
+      { _id: 1, fcm_token: 1 }
+    );
+
+    const fcmTokens = users.map((u) => u.fcm_token).filter(Boolean);
+
+    // 🔥 BASIC LOGS
+    console.log("📢 PUSH NOTIFICATION STARTED");
+    console.log("Poster ID:", createdData._id.toString());
+    console.log("Total users found:", users.length);
+    console.log("Total valid FCM tokens:", fcmTokens.length);
+
+    // 🔥 USER LIST LOG
+    if (users.length > 0) {
+      console.log(
+        "Users with FCM token:",
+        users.map((u) => ({
+          userId: u._id.toString(),
+          fcm_token: u.fcm_token,
+        }))
+      );
+    }
+
+    let firebaseResponse = null;
+
+    if (fcmTokens.length > 0) {
+      const title = "New Poster Created";
+      const body = `A new poster titled "${createdData.title}" has been added.`;
+      const data = { posterId: createdData._id.toString() };
+
+      // 🔥 MESSAGE LOG
+      console.log("📨 PUSH PAYLOAD");
+      console.log({
+        title,
+        body,
+        data,
+      });
+
+      // 🔥 Send push
+      firebaseResponse = await sendPushNotification(
+        fcmTokens,
+        title,
+        body,
+        data
+      );
+
+      // 🔥 Firebase response log
+      console.log("🔥 FIREBASE RESPONSE");
+      console.log(JSON.stringify(firebaseResponse, null, 2));
+
+      if (firebaseResponse) {
+        console.log("✅ PUSH SUMMARY");
+        console.log("Success Count:", firebaseResponse.successCount);
+        console.log("Failure Count:", firebaseResponse.failureCount);
+
+        if (firebaseResponse.responses) {
+          firebaseResponse.responses.forEach((r, index) => {
+            if (r.success) {
+              console.log(`✔ Token ${index + 1}: Delivered`);
+            } else {
+              console.log(
+                `❌ Token ${index + 1}: Failed →`,
+                r.error?.message || r.error
+              );
+            }
+          });
+        }
+      }
+    } else {
+      console.log("⚠️ No valid FCM tokens found. Push skipped.");
+    }
+
+    // ================= RESPONSE =================
+
     const formattedExpiryDate = createdData.expirydate
       ? new Date(createdData.expirydate).toLocaleString("en-IN", {
           timeZone: "Asia/Kolkata",
         })
       : null;
 
-    // ✅ Response
     return res.status(200).json({
       success: true,
       message: "Poster created successfully ✅",
@@ -92,7 +174,7 @@ const createposter = async function (req, res) {
         reporterId: createdData.reporterId,
         reporter: createdData.reporter,
         title: createdData.title,
-        type: createdData.type, // ✅ include in response
+        type: createdData.type,
         expirydate: formattedExpiryDate,
         category: createdData.category,
         location: createdData.location,
@@ -103,7 +185,10 @@ const createposter = async function (req, res) {
     });
   } catch (err) {
     console.error("❌ Error creating poster:", err);
-    return res.status(500).json({ success: false, message: err.message });
+    return res.status(500).json({
+      success: false,
+      message: err.message,
+    });
   }
 };
 
@@ -397,33 +482,42 @@ const getallposters = async function (req, res) {
   try {
     const userId = req.decoded.id;
 
+    // ✅ Validate user
     const usrdata = await usermodel.findById(userId);
     if (!usrdata)
       return res.status(400).send({ status: false, message: "Please Login" });
 
-    // 🧩 Fetch Posters, Ads, Sliders
+    // ✅ Fetch posters
     const posters = await postermodel.find({}).sort({ createdAt: -1 });
     if (!posters.length)
       return res.status(404).send({ status: false, message: "No posters found" });
 
+    // ✅ Fetch active ads & sliders
     const ads = await adsmodel.find({ status: "active" }).sort({ createdAt: -1 });
-    const sliders = await slidermodel.find({ status: "active" }).sort({ createdAt: -1 });
+    const sliders = await slidermodel.find({ status: "active" }).sort({ createdAt: 1 }); // oldest first
 
     const formattedPosters = [];
     let posterCount = 0;
 
-    // 🖼️ Posters loop
+    // ✅ Calculate dynamic slider positions (gap of 4 posters)
+    const gap = 4;
+    const sliderPositions = sliders.map((_, i) => (i + 1) * gap);
+    let sliderIndex = 0;
+
     for (let poster of posters) {
+      posterCount++;
+
       // ✅ Poster likes
       const likes = await likemodel.find({ contentId: poster._id.toString(), type: "poster" });
       const totalLikes = likes.length;
       const isLiked = likes.some(like => like.userId.toString() === userId.toString());
 
-      // ✅ Poster comments count
+      // ✅ Poster comments
       const totalComments = Array.isArray(poster.comments)
         ? poster.comments.length
         : poster.comments || 0;
 
+      // ✅ Push poster
       formattedPosters.push({
         _id: poster._id,
         title: poster.title,
@@ -439,14 +533,9 @@ const getallposters = async function (req, res) {
         updatedAt: poster.updatedAt,
       });
 
-      posterCount++;
-
-      // 🧩 Insert Ads after specific number of posters
+      // ✅ Insert Ads after specific number of posters
       for (let ad of ads) {
-        if (
-          ["ads", "posters"].includes(ad.type) &&
-          posterCount === ad.showAfterPosters
-        ) {
+        if (["ads", "posters"].includes(ad.type) && posterCount === ad.showAfterPosters) {
           formattedPosters.push({
             _id: ad._id,
             title: ad.title || "",
@@ -462,44 +551,45 @@ const getallposters = async function (req, res) {
         }
       }
 
-      // 🧩 Insert Sliders after specified posters (with likes + isLiked)
-      for (let slider of sliders) {
-        if (posterCount === slider.position) {  // Changed from showAfterPosters to position
-          // ✅ Slider likes
-          const sliderLikes = await likemodel.find({
-            contentId: slider._id.toString(),
-            type: "slider",
-          });
-          const totalSliderLikes = sliderLikes.length;
-          const isSliderLiked = sliderLikes.some(
-            like => like.userId.toString() === userId.toString()
-          );
+      // ✅ Insert slider dynamically (ignore DB position)
+      if (sliderIndex < sliders.length && posterCount === sliderPositions[sliderIndex]) {
+        const slider = sliders[sliderIndex];
 
-          // ✅ Comments & Views count
-          const totalComments =
-            typeof slider.comments === "number"
-              ? slider.comments
-              : Array.isArray(slider.comments)
-              ? slider.comments.length
-              : 0;
+        // Slider likes
+        const sliderLikes = await likemodel.find({
+          contentId: slider._id.toString(),
+          type: "slider",
+        });
+        const totalSliderLikes = sliderLikes.length;
+        const isSliderLiked = sliderLikes.some(
+          like => like.userId.toString() === userId.toString()
+        );
 
-          formattedPosters.push({
-            _id: slider._id,
-            title: slider.title,
-            sliders: slider.sliders || [],
-            type: "slider",
-            likes: totalSliderLikes,
-            comments: totalComments,
-            views: slider.views || 0,
-            isLiked: isSliderLiked,
-            createdAt: slider.createdAt,
-            updatedAt: slider.updatedAt,
-          });
-        }
+        // Slider comments & views
+        const totalComments =
+          typeof slider.comments === "number"
+            ? slider.comments
+            : Array.isArray(slider.comments)
+            ? slider.comments.length
+            : 0;
+
+        formattedPosters.push({
+          _id: slider._id,
+          title: slider.title,
+          sliders: slider.sliders || [],
+          type: "slider",
+          likes: totalSliderLikes,
+          comments: totalComments,
+          views: slider.views || 0,
+          isLiked: isSliderLiked,
+          createdAt: slider.createdAt,
+          updatedAt: slider.updatedAt,
+        });
+
+        sliderIndex++; // move to next slider
       }
     }
 
-    // ✅ Final Response
     return res.status(200).send({
       status: true,
       data: formattedPosters,
@@ -510,6 +600,7 @@ const getallposters = async function (req, res) {
     return res.status(500).send({ status: false, message: err.message });
   }
 };
+
 
 
 

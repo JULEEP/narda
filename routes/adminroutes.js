@@ -280,7 +280,7 @@ router.post(
 );
 
 router.delete(
-  "/admin/ads/delete",
+  "/admin/ads/delete/:id",
   //middlewareController.adminAuthentication,
   adsController.deleteads
 );

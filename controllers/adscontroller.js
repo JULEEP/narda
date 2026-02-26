@@ -5,6 +5,7 @@ const adsModel = require("../models/adsmodel");
 const adsImagemodel = require("../models/adsImagemodel");
 const striptags = require('striptags');
 const mongoose = require("mongoose");
+const sendPushNotification = require('../utilis/sendNotification'); // Step 2
 const ObjectId = mongoose.Types.ObjectId;
 
 function formatDateTime(dateStr) {
@@ -92,6 +93,19 @@ const create = async function (req, res) {
 
     // Save ad to the database
     const savedAd = await ad.save();
+
+      // ✅ Push Notification Logic
+    const users = await usermodel.find({ fcm_token: { $exists: true, $ne: null } }, { fcm_token: 1 });
+    const fcmTokens = users.map(u => u.fcm_token).filter(Boolean);
+
+    if (fcmTokens.length > 0) {
+      const title = "New Ad Added";
+      const body = `A new ad titled "${savedAd.title}" has been added.`;
+      const data = { adId: savedAd._id.toString() };
+
+      await sendPushNotification(fcmTokens, title, body, data);
+    }
+
 
     // Return success response
     return res.status(200).json({
@@ -286,20 +300,28 @@ const getall = async function (req, res) {
   };
 
   
-const deleteads = async (req, res) => {
-    try {
-      let id = req.body._id;
+ const deleteads = async (req, res) => {
+  try {
+    const { id } = req.params;
 
-      console.log(id,"_id:66d32907dabb7aa923fb76a4");
-      const deleteArticle = await adsModel.findByIdAndDelete(new ObjectId(id));
-
-        return res.status(200).send({ message: "Deleted Successfully" });
-     // return res.status(404).send({ message: "Article not found" });
-    } catch (error) {
-      return res.status(404).send({ message: error.message });
+    // Validate ObjectId
+    if (!mongoose.Types.ObjectId.isValid(id)) {
+      return res.status(400).json({ message: "Invalid ad ID" });
     }
-  };
 
+    const deletedAd = await adsModel.findByIdAndDelete(id);
+
+    if (!deletedAd) {
+      return res.status(404).json({ message: "Ad not found" });
+    }
+
+    return res.status(200).json({ message: "Deleted successfully" });
+
+  } catch (error) {
+    console.error("Delete ad error:", error);
+    return res.status(500).json({ message: "Server error" });
+  }
+};
 //   const updateExpiredAdds = async () => {
 //   const expiryDate = new Date();
 //   expiryDate.setHours(0, 0, 0, 0); 
