@@ -203,6 +203,7 @@ const planaAdminController = require("../controllers/plan.controller");
 router.post("/register", admincontroller.register);
 router.post("/otp-login", admincontroller.otplogin);
 router.post("/otp-verify", admincontroller.verifyotp);
+router.post("/fcmotp-verify", admincontroller.verifyWithFirebase);
 router.post("/login", admincontroller.login);
 router.post(
   "/edit",
